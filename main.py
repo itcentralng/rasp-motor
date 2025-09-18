@@ -9,26 +9,29 @@ import RPi.GPIO as GPIO
 import time
 import sys
 
-# Pin definitions (BCM numbering)
+# Pin definitions
 STEP_PIN = 8  # GPIO 8
 DIR_PIN = 10   # GPIO 10
-# ENABLE_PIN not used for Raspberry Pi setup
+ENABLE_PIN = 12  # GPIO 12 - Add enable pin for better control
 
 # Motor parameters
-STEP_DELAY = 0.001  # seconds between steps (adjust for speed)
+STEP_DELAY = 0.002  # seconds between steps (increased for stability)
+DIR_SETUP_TIME = 0.001  # delay after direction change
 
 def setup_gpio():
     """Initialize GPIO pins"""
-    GPIO.setmode(GPIO.BCM)
+    GPIO.setmode(GPIO.BOARD)
     GPIO.setwarnings(False)
     
     # Setup pins as outputs
     GPIO.setup(STEP_PIN, GPIO.OUT)
     GPIO.setup(DIR_PIN, GPIO.OUT)
+    GPIO.setup(ENABLE_PIN, GPIO.OUT)
     
     # Initialize pins to LOW
     GPIO.output(STEP_PIN, GPIO.LOW)
     GPIO.output(DIR_PIN, GPIO.LOW)
+    GPIO.output(ENABLE_PIN, GPIO.LOW)  # Enable the driver (active LOW)
     
     print("Stepper Motor Controller Ready")
     print("Commands: 'right [steps]' or 'left [steps]'")
@@ -36,6 +39,9 @@ def setup_gpio():
 
 def cleanup_gpio():
     """Clean up GPIO on exit"""
+    # Disable motor driver before cleanup
+    GPIO.output(ENABLE_PIN, GPIO.HIGH)  # Disable driver (active LOW)
+    time.sleep(0.1)  # Brief delay to ensure driver disables
     GPIO.cleanup()
     print("GPIO cleanup complete")
 
@@ -50,12 +56,15 @@ def move_motor(clockwise, steps):
     # Set direction
     GPIO.output(DIR_PIN, GPIO.HIGH if clockwise else GPIO.LOW)
     
+    # Wait for direction to stabilize
+    time.sleep(DIR_SETUP_TIME)
+    
     # Step the motor
     for i in range(steps):
         GPIO.output(STEP_PIN, GPIO.HIGH)
-        time.sleep(STEP_DELAY)
+        time.sleep(STEP_DELAY / 2)  # Half delay for HIGH pulse
         GPIO.output(STEP_PIN, GPIO.LOW)
-        time.sleep(STEP_DELAY)
+        time.sleep(STEP_DELAY / 2)  # Half delay for LOW pulse
         
         # Optional: Print progress for large step counts
         if steps > 100 and (i + 1) % 50 == 0:
