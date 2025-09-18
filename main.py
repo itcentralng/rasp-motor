@@ -1,93 +1,132 @@
+#!/usr/bin/env python3
+"""
+Stepper Motor Control with TB6600 Driver for Raspberry Pi
+Commands: "right [steps]" or "left [steps]"
+Note: ENABLE_PIN is not used in this Raspberry Pi version
+"""
+
 import RPi.GPIO as GPIO
-from time import sleep
+import time
+import sys
 
-# Direction pin from controller
-DIR = 10
-# Step pin from controller
-STEP = 8
-# 0/1 used to signify clockwise or counterclockwise.
-CW = 1
-CCW = 0
+# Pin definitions (BCM numbering)
+STEP_PIN = 8  # GPIO 8
+DIR_PIN = 10   # GPIO 10
+# ENABLE_PIN not used for Raspberry Pi setup
 
-# Setup pin layout on PI
-GPIO.setmode(GPIO.BOARD)
+# Motor parameters
+STEP_DELAY = 0.001  # seconds between steps (adjust for speed)
 
-# Establish Pins in software
-GPIO.setup(DIR, GPIO.OUT)
-GPIO.setup(STEP, GPIO.OUT)
+def setup_gpio():
+    """Initialize GPIO pins"""
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+    
+    # Setup pins as outputs
+    GPIO.setup(STEP_PIN, GPIO.OUT)
+    GPIO.setup(DIR_PIN, GPIO.OUT)
+    
+    # Initialize pins to LOW
+    GPIO.output(STEP_PIN, GPIO.LOW)
+    GPIO.output(DIR_PIN, GPIO.LOW)
+    
+    print("Stepper Motor Controller Ready")
+    print("Commands: 'right [steps]' or 'left [steps]'")
+    print("Type 'quit' to exit")
 
-def move_motor(direction, steps, step_delay=0.005):
+def cleanup_gpio():
+    """Clean up GPIO on exit"""
+    GPIO.cleanup()
+    print("GPIO cleanup complete")
+
+def move_motor(clockwise, steps):
     """
-    Move the stepper motor in the specified direction for a given number of steps.
+    Move the stepper motor
     
     Args:
-        direction: CW (1) for clockwise, CCW (0) for counterclockwise
-        steps: Number of steps to move
-        step_delay: Delay between steps (controls speed)
+        clockwise (bool): True for clockwise, False for counterclockwise
+        steps (int): Number of steps to move
     """
-    print(f"Moving motor {'clockwise' if direction == CW else 'counterclockwise'} for {steps} steps...")
-    
     # Set direction
-    GPIO.output(DIR, direction)
+    GPIO.output(DIR_PIN, GPIO.HIGH if clockwise else GPIO.LOW)
     
-    # Allow time for direction change
-    sleep(0.1)
+    # Step the motor
+    for i in range(steps):
+        GPIO.output(STEP_PIN, GPIO.HIGH)
+        time.sleep(STEP_DELAY)
+        GPIO.output(STEP_PIN, GPIO.LOW)
+        time.sleep(STEP_DELAY)
+        
+        # Optional: Print progress for large step counts
+        if steps > 100 and (i + 1) % 50 == 0:
+            print(f"Progress: {i + 1}/{steps} steps")
     
-    # Execute steps
-    for step in range(steps):
-        GPIO.output(STEP, GPIO.HIGH)
-        sleep(step_delay)
-        GPIO.output(STEP, GPIO.LOW)
-        sleep(step_delay)
-    
-    print("Movement complete!")
+    print("Movement complete")
 
-def get_user_input():
-    """Get direction and step count from user input."""
-    try:
-        print("\nStepper Motor Control")
-        print("Direction options: 1 for Clockwise, 0 for Counterclockwise")
-        
-        direction = int(input("Enter direction (1 for CW, 0 for CCW): "))
-        if direction not in [0, 1]:
-            print("Invalid direction! Please enter 0 or 1.")
-            return None, None
-        
-        steps = int(input("Enter number of steps: "))
-        if steps <= 0:
-            print("Invalid step count! Please enter a positive number.")
-            return None, None
-        
-        return direction, steps
+def parse_and_execute_command(command):
+    """
+    Parse and execute motor commands
     
+    Args:
+        command (str): Command string like "right 100" or "left 50"
+    """
+    try:
+        parts = command.strip().split()
+        
+        if len(parts) != 2:
+            print("Invalid command format. Use: 'right [steps]' or 'left [steps]'")
+            return
+        
+        direction = parts[0].lower()
+        steps = int(parts[1])
+        
+        if steps <= 0:
+            print("Invalid step count. Must be positive integer.")
+            return
+        
+        if direction == "right":
+            move_motor(True, steps)
+            print(f"Moving right {steps} steps")
+        elif direction == "left":
+            move_motor(False, steps)
+            print(f"Moving left {steps} steps")
+        else:
+            print("Invalid direction. Use 'right' or 'left'")
+            
     except ValueError:
-        print("Invalid input! Please enter numbers only.")
-        return None, None
+        print("Invalid step count. Must be a number.")
+    except Exception as e:
+        print(f"Error executing command: {e}")
 
 def main():
-    """Main program loop."""
+    """Main program loop"""
     try:
-        print("Stepper Motor Controller")
-        print("Press Ctrl+C to exit")
+        setup_gpio()
+        
+        print("\nEnter commands (or 'quit' to exit):")
         
         while True:
-            direction, steps = get_user_input()
-            
-            if direction is not None and steps is not None:
-                move_motor(direction, steps)
-            
-            # Ask if user wants to continue
-            continue_choice = input("\nDo you want to move the motor again? (y/n): ").lower()
-            if continue_choice != 'y' and continue_choice != 'yes':
+            try:
+                command = input("> ").strip()
+                
+                if command.lower() in ['quit', 'exit', 'q']:
+                    break
+                
+                if command:
+                    parse_and_execute_command(command)
+                    
+            except KeyboardInterrupt:
+                print("\nKeyboard interrupt detected")
                 break
-    
-    except KeyboardInterrupt:
-        print("\nProgram interrupted by user")
-    
+            except EOFError:
+                print("\nEOF detected")
+                break
+                
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
-        print("Cleaning up GPIO...")
-        GPIO.cleanup()
-        print("GPIO cleanup complete!")
+        cleanup_gpio()
+        print("Program terminated")
 
 if __name__ == "__main__":
     main()
